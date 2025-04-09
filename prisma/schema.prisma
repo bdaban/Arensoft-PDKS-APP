@@ -1,0 +1,264 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Kullanıcı Modeli
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Şirket Modeli
+model Company {
+  id           Int           @id @default(autoincrement())
+  name         String
+  departments  Department[]
+  devices      Device[]
+  shifts       Shift[]
+  workGroups   WorkGroup[]   // Şirkete ait çalışma grupları
+  employees    Employee[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+// Departman Modeli
+model Department {
+  id        Int        @id @default(autoincrement())
+  name      String
+  company   Company    @relation(fields: [companyId], references: [id])
+  companyId Int
+  employees Employee[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+// Cihaz Modeli
+model Device {
+  id            Int              @id @default(autoincrement())
+  name          String
+  ip            String?
+  model         String?
+  company       Company          @relation(fields: [companyId], references: [id])
+  companyId     Int
+  attendanceLogs AttendanceLog[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+// Vardiya Modeli
+model Shift {
+  id               Int              @id @default(autoincrement())
+  name             String
+  startTime        String
+  endTime          String
+  tolerance        Int              @default(15)  // Tolerans dakika cinsinden
+  type             String           @default("normal") // normal, shift, holiday, holiday_shift
+  company          Company          @relation(fields: [companyId], references: [id])
+  companyId        Int
+  workGroupShifts  WorkGroupShift[]
+  schedules        Schedule[]
+  shiftPlans       ShiftPlan[]
+  dayShiftPlans    DayShiftPlan[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+// Çalışma Grupları Modeli
+model WorkGroup {
+  id        Int               @id @default(autoincrement())
+  name      String
+  type      String            @default("fixed") // fixed (sabit saat), shift (vardiyalı)
+  startTime String?           // Sabit çalışma saati için başlangıç
+  endTime   String?           // Sabit çalışma saati için bitiş
+  tolerance Int               @default(15)     // Tolerans dakika cinsinden
+  company   Company           @relation(fields: [companyId], references: [id])
+  companyId Int
+  shifts    WorkGroupShift[]
+  employees Employee[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+// Çalışma Grubu Vardiya İlişkisi Modeli
+model WorkGroupShift {
+  id          Int       @id @default(autoincrement())
+  workGroup   WorkGroup @relation(fields: [workGroupId], references: [id])
+  workGroupId Int
+  shift       Shift     @relation(fields: [shiftId], references: [id])
+  shiftId     Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([workGroupId, shiftId])
+}
+
+// Çalışma Planı Modeli
+model Schedule {
+  id           Int              @id @default(autoincrement())
+  name         String
+  type         String           @default("fixed") // fixed, rotating
+  parameterId  Int
+  shift        Shift?           @relation(fields: [shiftId], references: [id])
+  shiftId      Int?
+  employees    Employee[]
+  dayPlans     DayShiftPlan[]   @relation("ScheduleToDayShiftPlan")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+// Gün Bazlı Vardiya Planı
+model DayShiftPlan {
+  id           Int           @id @default(autoincrement())
+  dayOfWeek    Int           // 1: Pazartesi, 2: Salı, ..., 7: Pazar
+  schedule     Schedule      @relation("ScheduleToDayShiftPlan", fields: [scheduleId], references: [id])
+  scheduleId   Int
+  shift        Shift?        @relation(fields: [shiftId], references: [id])
+  shiftId      Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+// Tarih Bazlı Vardiya Planı (Özel günler, değişen vardiyalar vs. için)
+model ShiftPlan {
+  id            Int          @id @default(autoincrement())
+  date          DateTime
+  shift         Shift        @relation(fields: [shiftId], references: [id])
+  shiftId       Int
+  employee      Employee     @relation(fields: [employeeId], references: [id])
+  employeeId    Int
+  description   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+// Maaş Parametreleri Modeli
+model PayrollParameter {
+  id           Int      @id @default(autoincrement())
+  name         String
+  dailyHour    Float
+  absenceRate  Float    @default(1.0)
+  absenceType  String   @default("deduction")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Maaş Alanları Modeli
+model PayrollField {
+  id        Int         @id @default(autoincrement())
+  name      String
+  type      String
+  isDay     Boolean     @default(false)
+  isHour    Boolean     @default(false)
+  isSalary  Boolean     @default(false)
+  leaveTypes LeaveType[]
+  penalties  Penalty[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+// Personel Modeli
+model Employee {
+  id             Int              @id @default(autoincrement())
+  cardNo         String           @unique
+  name           String
+  surname        String
+  company        Company          @relation(fields: [companyId], references: [id])
+  companyId      Int
+  department     Department       @relation(fields: [departmentId], references: [id])
+  departmentId   Int
+  schedule       Schedule         @relation(fields: [scheduleId], references: [id])
+  scheduleId     Int
+  workGroup      WorkGroup?       @relation(fields: [workGroupId], references: [id])
+  workGroupId    Int?
+  attendanceLogs AttendanceLog[]
+  shiftPlans     ShiftPlan[]      // Personel için özel vardiya planları
+  leaves         Leave[]
+  penalties      Penalty[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+// Giriş Çıkış Kayıtları Modeli
+model AttendanceLog {
+  id          Int      @id @default(autoincrement())
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  employeeId  Int
+  date        DateTime
+  entryTime   String?
+  exitTime    String?
+  device      Device   @relation(fields: [deviceId], references: [id])
+  deviceId    Int
+  shiftId     Int?     // Hangi vardiyada olduğunu belirtir (hesaplanabilir bir alan)
+  isLate      Boolean? // Geç giriş mi (hesaplanabilir bir alan)
+  isEarlyExit Boolean? // Erken çıkış mı (hesaplanabilir bir alan)
+  status      String?  @default("normal") // normal, late, early_exit, absent, excused
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// İzin Modeli
+model Leave {
+  id          Int       @id @default(autoincrement())
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  employeeId  Int
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  leaveTypeId Int
+  startTime   DateTime
+  endTime     DateTime
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// İzin Türleri Modeli
+model LeaveType {
+  id             Int           @id @default(autoincrement())
+  name           String
+  isPaid         Boolean       @default(true)
+  payrollField   PayrollField  @relation(fields: [payrollFieldId], references: [id])
+  payrollFieldId Int
+  leaves         Leave[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+// Ceza Modeli
+model Penalty {
+  id             Int          @id @default(autoincrement())
+  employee       Employee     @relation(fields: [employeeId], references: [id])
+  employeeId     Int
+  date           DateTime
+  duration       Int
+  type           String
+  multiplier     Float        @default(1.0)
+  payrollField   PayrollField @relation(fields: [payrollFieldId], references: [id])
+  payrollFieldId Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+// Neden Kodları Modeli
+model Reason {
+  id         Int      @id @default(autoincrement())
+  name       String
+  leaveName  String?
+  fullDay    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
